@@ -62,7 +62,7 @@ class FakeS2S(S2S):
 
 class TestCumulantTransform(TestCase):
     def test_functions(self):
-        gds = GeneratedDataSource()
+        gds = GeneratedDataSource(y_id = lambda i: TimeSeriesID(str(i), str(i % 2), str(int(i % 4 / 2))))
         ds = gds.dataset()
         x = ds.y
         f = CumulantTransform()
@@ -130,7 +130,7 @@ class TestCumulantLearner(TestCase):
     @ignore_warnings
     def test_functions(self):
         horizon = 24
-        gds = GeneratedDataSource()
+        gds = GeneratedDataSource(y_id = lambda i: TimeSeriesID(str(i), str(i % 2), str(int(i % 4 / 2))))
         counter = RegressorCounter()
 
         f = CumulantLearner(gds.dataset(),

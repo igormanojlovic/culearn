@@ -1,14 +1,14 @@
 from collections import Counter
 from math import floor
 
-from culearn.features import *
-from culearn.util import ignore_warnings, parallel
-from fastcluster import linkage
 from hkmeans import HKMeans
-from scipy.cluster.hierarchy import cut_tree
+from scipy.cluster.hierarchy import linkage, cut_tree
 from sklearn.cluster import KMeans, BisectingKMeans
 from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score, silhouette_score
 from tslearn.clustering import KShape
+
+from culearn.features import *
+from culearn.util import ignore_warnings, parallel
 
 
 class Clustering(StrMixin):

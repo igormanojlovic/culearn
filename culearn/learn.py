@@ -1,12 +1,13 @@
 from collections import OrderedDict
+from plotly.graph_objs.scatter import Line
+from plotly.subplots import make_subplots
+from sklearn.impute import KNNImputer
+from tqdm import tqdm
 
 from culearn.clustering import *
 from culearn.csv import *
 from culearn.regression import *
 from culearn.util import *
-from plotly.graph_objs.scatter import Line
-from plotly.subplots import make_subplots
-from sklearn.impute import KNNImputer
 
 
 class CumulantTransform(StrMixin):
@@ -378,7 +379,7 @@ class CumulantTransform(StrMixin):
             font_family="Times New Roman",
             font_color="black",
             font_size=12,
-            height=800,
+            height=250*len(cumulants),
         )
 
         fig.update_layout(**kwargs)
@@ -473,9 +474,8 @@ class CumulantLearner(StrMixin):
         sources. The cumulant learner implements the Cumulant Learning method utilizing:
 
         - :class:`CumulantTransform` to cluster similar time series and obtain time series of cluster-level cumulants.
-        - :class:`TimeSeriesRegressor` (:class:`DeepTimeSeriesRegressor` or :class:`ShallowTimeSeriesRegressor`) to
-          capture local trends and time dependencies in the obtained cumulants based on lagged cumulants, encoded time
-          (calendar) features, and other exogenous features. Note that one regressor is trained for each cluster.
+        - :class:`TimeSeriesRegressor` to capture local trends and time dependencies in the obtained cumulants based on
+          lagged cumulants, encoded time (calendar) features, and other exogenous features, for each cluster individually.
 
         The learned patterns are used to predict future cumulants. After that, the predicted cumulants can be
         transformed into prediction intervals for individual time series based on Cornish–Fisher expansion.
@@ -486,7 +486,7 @@ class CumulantLearner(StrMixin):
         self.regressor = regressor
 
         self.interval2cumulants = {}
-        self.cluster2regressor: MutableMapping[str, TimeSeriesGroupRegressor] = {}
+        self.cluster2regressor: MutableMapping[str, MultiSeriesRegressor] = {}
 
     def __x(self, interval: TimeInterval):
         """Prepares x values using resampling and linear interpolation."""
@@ -494,33 +494,34 @@ class CumulantLearner(StrMixin):
         return x[interval.contains(x.index)].dropna()
 
     @staticmethod
-    def __clusters(y: Sequence[TimeSeriesDataFrame]) -> Mapping[str, Sequence[TimeSeriesDataFrame]]:
-        clusters = {}
+    def __group(y: Sequence[TimeSeriesDataFrame],
+                by: Callable[[TimeSeriesID], str] = lambda ts_id: ts_id.source) \
+            -> Mapping[str, Sequence[TimeSeriesDataFrame]]:
+        groups = {}
         for df in y:
-            clusters.setdefault(df.ts_id.source, []).append(df)
-        return clusters
+            groups.setdefault(by(df.ts_id), []).append(df)
+        return groups
 
-    def __train(self, x: pd.DataFrame, y: Sequence[TimeSeriesDataFrame]):
+    def __train(self, x: pd.DataFrame, y: Sequence[TimeSeriesDataFrame], verbose=False):
         """Trains the underlying cluster-level regressors."""
-        clusters = self.__clusters(y)
-        for c, ydfs in clusters.items():
-            regressor = self.cluster2regressor.get(c)
+        y_clusters = tqdm(self.__group(y).items(), desc='Clusters') if verbose else self.__group(y).items()
+        for cluster, y_cluster in y_clusters:
+            regressor = self.cluster2regressor.get(cluster)
             if regressor is None:
-                self.cluster2regressor[c] = regressor = TimeSeriesGroupRegressor(self.regressor())
-            regressor.fit(x, ydfs)
+                self.cluster2regressor[cluster] = regressor = MultiSeriesRegressor(self.regressor())
+            regressor.fit(x, y_cluster)
         return self
 
     def __predict(self, x: pd.DataFrame, y: Sequence[TimeSeriesDataFrame]):
         """Predicts y future based on y past (in the lookback range) and x future (in the forecast horizon)."""
         y_pred = []
-        clusters = self.__clusters(y)
-        for c, ydfs in clusters.items():
-            dfs_pred = self.cluster2regressor.get(c).predict(x, ydfs)
-            ydfs_pred = [TimeSeriesDataFrame(ydfs[i].ts_id, dfs_pred[i]) for i in range(len(ydfs))]
-            y_pred.extend(ydfs_pred)
+        y_clusters = self.__group(y)
+        for cluster, y_cluster in y_clusters.items():
+            pred = self.cluster2regressor.get(cluster).predict(x, y_cluster)
+            y_pred.extend([TimeSeriesDataFrame(y_cluster[i].ts_id, pred[i]) for i in range(len(y_cluster))])
         return y_pred
 
-    def __regression_score(self, score: Callable[[TimeSeriesGroupRegressor], pd.DataFrame]) -> pd.DataFrame:
+    def __regression_score(self, score: Callable[[MultiSeriesRegressor], pd.DataFrame]) -> pd.DataFrame:
         """Returns regression-specific scores additionally indexed by cluster."""
 
         def _scores():
@@ -554,31 +555,58 @@ class CumulantLearner(StrMixin):
         return self.__regression_score(lambda _: _.base.summary())
 
     def horizon(self, t: datetime) -> TimeInterval:
-        """Returns the maximum horizon range from the underlying regressors, starting at the specified timestamp."""
+        """
+        Returns the maximum horizon range from the underlying regressors.
+
+        :param t: Start of the horizon interval.
+        :return: Lookback interval.
+        """
         horizon = max([_.base.horizon for _ in self.cluster2regressor.values()])
         return TimeInterval(t, t + timedelta(seconds=self.resolution.seconds * horizon))
 
     def lookback(self, t: datetime) -> TimeInterval:
-        """Returns the maximum lookback range from the underlying regressors, ending at the specified timestamp."""
+        """
+        Returns the maximum lookback range from the underlying regressors.
+
+        :param t: End of the lookback interval.
+        :return: Lookback interval.
+        """
         lookback = max([_.base.lookback for _ in self.cluster2regressor.values()])
         return TimeInterval(t - timedelta(seconds=self.resolution.seconds * lookback), t)
 
-    def fit(self, interval: TimeInterval):
-        """Learns the time series of cluster-level cumulants from the specified interval."""
+    def fit(self, interval: TimeInterval, verbose=False):
+        """
+        Learns the time series of cluster-level cumulants from the specified interval.
+
+        :param interval: Time interval of the cumulants to learn from.
+        :param verbose: Whether to print execution details.
+        :return: self.
+        """
         self.transformer.fit(self.dataset.y, self.resolution, interval)
         self.interval2cumulants[interval] = y_cumulants = self.transformer.transform(interval)
-        self.__train(self.__x(interval), y_cumulants)
+        self.__train(self.__x(interval), y_cumulants, verbose)
         return self
 
-    def update(self, interval: TimeInterval):
-        """Learns more of the cluster-level cumulants from the specified interval but keeps the clusters."""
+    def update(self, interval: TimeInterval, verbose=False):
+        """
+        Learns more of the cluster-level cumulants from the specified interval but keeps the clusters.
+
+        :param interval: Time interval of the cumulants to learn from.
+        :param verbose: Whether to print execution details.
+        :return: self.
+        """
         fit_interval = TimeInterval(self.lookback(interval.start).start, interval.end)
         self.interval2cumulants[interval] = y_cumulants = self.transformer.transform(fit_interval)
-        self.__train(self.__x(fit_interval), y_cumulants)
+        self.__train(self.__x(fit_interval), y_cumulants, verbose)
         return self
 
     def cumulants(self, interval: TimeInterval):
-        """Returns time series of cluster-level cumulants in the specified interval."""
+        """
+        Returns time series of cluster-level cumulants in the specified interval.
+
+        :param interval: Time interval of the learned cumulants.
+        :return: Learned cumulants.
+        """
         for i, c in self.interval2cumulants.items():
             if i.contains(interval):
                 return [_.select(interval) for _ in c]
@@ -685,7 +713,7 @@ class CumulantLearner(StrMixin):
                 vprint(f'Learned {len(y)} time series of cluster-level cumulants.')
             else:
                 vprint(f'Learning {len(y)} time series of cluster-level cumulants.')
-                self.__train(self.__x(fit), select(y, fit))
+                self.__train(self.__x(fit), select(y, fit), verbose)
                 vprint(f'{step} finished in {round(Time.now() - t)} sec.')
 
             return y

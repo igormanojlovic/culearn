@@ -9,12 +9,12 @@ def parse_requirements(filename='requirements.txt'):
 
 setup(
     name='culearn',
-    version='1.0',
+    version='1.1',
     packages=['culearn'],
     license='MIT',
     author='Igor Manojlović',
     author_email='igor.manojlovic.rs@gmail.com',
     url='https://github.com/igormanojlovic/culearn',
-    description='culearn: Python Package for Cumulant Learning',
+    description='culearn: Cumulant Learning in Python',
     install_requires=parse_requirements(),
 )

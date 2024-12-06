@@ -1,20 +1,20 @@
+import geopy
 import gzip
-import tarfile
-import urllib.parse
-from random import randrange
-from time import sleep
-
 import meteostat as meteo
 import numpy as np
+import patoolib
 import requests
+import tarfile
 import wget
 import xmltodict
-import zipfile_deflate64 as zipfile
+
+from meteostat.series.fetch import fetch as meteo_fetch
+from random import randrange
+from sklearn.neighbors import NearestNeighbors
+from time import sleep
+
 from culearn.csv import *
 from culearn.util import File, Time
-from meteostat.series.fetch import fetch as meteo_fetch
-from py7zr import py7zr
-from sklearn.neighbors import NearestNeighbors
 
 
 class DataSource(StrMixin):
@@ -39,24 +39,17 @@ class _Download(StrMixin):
             return path
 
     @classmethod
-    def zip(cls, url: str, zip_dir: str, zip_name: str = 'download'):
+    @ignore_warnings
+    def zip(cls, url: str, zip_dir: str, zip_file: str = 'download.zip', manual=False):
         File.make_dir(zip_dir)
-        zip_path = os.path.join(zip_dir, f'{zip_name}.zip')
+        zip_path = os.path.join(zip_dir, zip_file)
         if not os.path.exists(zip_path):
-            zip_path = cls.get(url, zip_path)
+            if manual:
+                raise Exception(f"Please download {url} to {zip_path} to proceed with data preparation.")
+            else:
+                zip_path = cls.get(url, zip_path)
 
-        with zipfile.ZipFile(zip_path, mode='r') as extractor:
-            extractor.extractall(zip_dir)
-
-    @classmethod
-    def seven_zip(cls, url: str, zip_dir: str, zip_name: str = 'download'):
-        File.make_dir(zip_dir)
-        zip_path = os.path.join(zip_dir, f'{zip_name}.7z')
-        if not os.path.exists(zip_path):
-            zip_path = cls.get(url, zip_path)
-
-        with py7zr.SevenZipFile(zip_path, mode='r') as extractor:
-            extractor.extractall(zip_dir)
+        patoolib.extract_archive(zip_path, outdir=zip_dir)
 
     @classmethod
     def umass(cls, url: str, zip_dir: str, zip_name: str):
@@ -97,10 +90,11 @@ class OnlineWeather(Weather):
 
 class WorldWeather(OnlineWeather):
     def __init__(self, interval: TimeInterval, location: str, api_key: str):
-        """Weather data from https://worldweatheronline.com."""
+        """Weather data from https://www.worldweatheronline.com."""
         super().__init__(interval, location)
         self.api_key = api_key
 
+    @ignore_warnings
     def read(self) -> pd.DataFrame:
         def history(i: TimeInterval) -> bytes:
             _start_date = i.start.date()
@@ -119,7 +113,6 @@ class WorldWeather(OnlineWeather):
             x = xmltodict.parse(response)
             if print_query:
                 query = x['data']['request']['query']
-                print(f'Downloading weather data from worldweatheronline.com for {query}.')
             for dates in x['data']['weather']:
                 date = Time.py(dates['date'])
                 for values in dates['hourly']:
@@ -173,15 +166,13 @@ class MeteoWeather(OnlineWeather):
     @staticmethod
     def __location(location: str):
         """Returns full location info, latitude and longitude."""
-        url = 'https://nominatim.openstreetmap.org/search/' + urllib.parse.quote(location) + '?format=json'
-        response = requests.get(url).json()[0]
-        return str(response['display_name']), float(response['lat']), float(response['lon'])
+        gc = geopy.geocoders.Nominatim(user_agent='Geopy Library').geocode(location)
+        return gc.address, float(gc.latitude), float(gc.longitude)
 
+    @ignore_warnings
     def read(self) -> pd.DataFrame:
-        x = self.__location(self.location)
-        print(f'Downloading weather data from meteostat.net for {x[0]}.')
-
-        point = meteo.Point(x[1], x[2])
+        _, lat, lon = self.__location(self.location)
+        point = meteo.Point(lat, lon)
         data = meteo_fetch(meteo.Hourly(point, self.interval.start, self.interval.end - timedelta(hours=1)))
         data.reset_index(inplace=True)
         take_columns = {
@@ -206,7 +197,7 @@ class MeteoWeather(OnlineWeather):
 
 class UMassWeather(Weather):
     def __init__(self, directory: str):
-        """Weather data from UMass repository: https://traces.cs.umass.edu/index.php/Smart/Smart."""
+        """Weather data from UMass repository: https://traces.cs.umass.edu/docs/traces/smartstar/."""
         super().__init__()
         self.directory = directory
 
@@ -225,7 +216,7 @@ class UMassWeather(Weather):
 
         df_csv = [DataFrameCSV(self.directory, 'apartment-weather', f'apartment{_}.csv') for _ in range(2014, 2017)]
         if [_ for _ in df_csv if not _.exists()]:
-            _Download.umass('https://tinyurl.com/4h4usr2z', self.directory, 'weather')
+            _Download.umass('https://tinyurl.com/3hea6xp9', self.directory, 'weather')
             missing = [_.path for _ in df_csv if not _.exists()]
             if missing:
                 m = '\n'.join(missing)
@@ -354,7 +345,7 @@ class REFIT(SmartMeterDataSource):
                   for i in range(1, 22) if i != 14}
 
         if [_ for _ in id2csv.values() if not _.exists()]:
-            _Download.seven_zip('https://tinyurl.com/msc39r85', self.directory)
+            _Download.zip('https://tinyurl.com/msc39r85', self.directory, 'Processed_Data_CSV.7z', manual=True)
             missing = [_.path for _ in id2csv.values() if not _.exists()]
             if missing:
                 m = '\n'.join(missing)
@@ -394,7 +385,7 @@ class SGSC(SmartMeterDataSource):
 
         df_csv = DataFrameCSV(self.directory, 'CD_INTERVAL_READING_ALL_NO_QUOTES.csv', chunk=1000)
         if not df_csv.exists():
-            _Download.seven_zip('https://tinyurl.com/y6brtc9d', self.directory)
+            _Download.zip('https://tinyurl.com/y6brtc9d', self.directory)
             if not df_csv.exists():
                 raise Exception(f'Missing: {df_csv.path}')
 
@@ -407,7 +398,7 @@ class UMass(SmartMeterDataSource):
         """
         :class:`SmartMeterDataSource` with the UMass apartments data.
 
-        - Source: https://traces.cs.umass.edu/index.php/Smart/Smart
+        - Source: https://traces.cs.umass.edu/docs/traces/smartstar/
         - No. consumers: 113 (single-family apartments)
         - Type of values: power consumption [kW]
         - Sampling interval: 1-15 minutes
@@ -427,7 +418,7 @@ class UMass(SmartMeterDataSource):
                   if not (y == 2014 and a in [3, 6, 21, 65, 94, 112])]
 
         if [_csv for _, _csv in id_csv if not _csv.exists()]:
-            _Download.umass('https://tinyurl.com/2p9cvzcp', self.directory, 'electrical')
+            _Download.umass('https://tinyurl.com/5n822wkm', self.directory, 'electrical')
             missing = [_csv.path for _, _csv in id_csv if not _csv.exists()]
             if missing:
                 m = '\n'.join(missing)
@@ -441,13 +432,42 @@ class UMass(SmartMeterDataSource):
 
 
 class GeneratedTimeSeries(PandasTimeSeries, StreamingTimeSeries):
-    def __init__(self, ts_id=TimeSeriesID(), ts=pd.Series(dtype=float)):
-        """Generated time series for testing purposes."""
+    def __init__(self,
+                 ts_id: TimeSeriesID,
+                 interval: TimeInterval,
+                 resolution: TimeResolution,
+                 degree: int,
+                 seed: int):
+        """
+        Generated polynomial sinusoidal time series data with random noise coefficients, for testing purposes.
+
+        :param ts_id: Time series ID.
+        :param interval: Time interval of generated values.
+        :param resolution: Time resolution of generated values.
+        :param degree: Polynomial degree of generated values.
+        :param seed: Random seed for generating noise.
+        """
         super().__init__(ts_id)
-        self.ts = ts
+        self.interval = interval
+        self.resolution = resolution
+        self.degree = degree
+        self.seed = seed
 
     def series(self) -> pd.Series:
-        return self.ts
+        def generate_timestamps():
+            return [_.start for _ in self.resolution.steps(self.interval)]
+
+        def generate_values(length: int):
+            rand_state = np.random.RandomState(self.seed)
+            x = np.sin(np.linspace(0, length, length))
+            y = np.zeros(length)
+            for p in range(self.degree):
+                y += np.power(x, p) * rand_state.randn(len(x))
+            return y
+
+        timestamps = generate_timestamps()
+        values = generate_values(len(timestamps))
+        return pd.Series(values, index=timestamps)
 
     def stream(self) -> Iterable[TimeSeriesTuple]:
         for t, v in self.series().items():
@@ -458,35 +478,52 @@ class GeneratedDataSource(DataSource):
     def __init__(self,
                  x_count=10,
                  y_count=100,
+                 y_id = lambda i: TimeSeriesID(str(i)),
                  interval=TimeInterval(datetime(2021, 1, 1), datetime(2022, 1, 1)),
                  resolution=TimeResolution(hours=1),
                  calendar_iso_code='US',
                  degree=3):
-        """Generator of polynomial sinusoidal time series data with random noise coefficients, for testing purposes."""
+        """
+        Generator of polynomial sinusoidal time series data with random noise coefficients, for testing purposes.
+
+        :param x_count: Number of X time series.
+        :param y_count: Number of Y time series.
+        :param y_id: Function that returns Y time series ID for Y index.
+        :param interval: Time interval of generated values.
+        :param resolution: Time resolution of generated values.
+        :param calendar_iso_code: Calendar of generated timestamps.
+        :param degree: Polynomial degree of generated values.
+        """
         self.x_count = x_count
         self.y_count = y_count
+        self.y_id = y_id
         self.interval = interval
         self.resolution = resolution
         self.calendar = Time.calendar(calendar_iso_code)
         self.degree = degree
 
     def dataset(self) -> PredictionDataset:
-        y_id = [TimeSeriesID(str(self.y_count + i // 2), str(i % 2), str(i % 2)) for i in range(self.y_count)]
-        y = [GeneratedTimeSeries(_, self(1).iloc[:, 0]) for _ in y_id]
-        return PredictionDataset(self(self.x_count), y)
+        x = self(self.x_count)
+        y = [
+            GeneratedTimeSeries(
+                TimeSeriesID(self.y_id(i)),
+                self.interval,
+                self.resolution,
+                self.degree,
+                i)
+            for i in range(self.y_count)]
+        return PredictionDataset(x, y)
 
     def __call__(self, count: int, prefix='X') -> pd.DataFrame:
         """Generates specified number of time series."""
-
-        def fake_one(length: int):
-            x = np.sin(np.linspace(0, length, length))
-            y = np.zeros(length)
-            for p in range(self.degree):
-                y += np.power(x, p) * np.random.rand(len(x))
-            return y
-
-        timestamps = [_.start for _ in self.resolution.steps(self.interval)]
-        df = pd.DataFrame([fake_one(len(timestamps)) for _ in range(count)], columns=timestamps).T
+        df = pd.DataFrame([
+            GeneratedTimeSeries(
+                TimeSeriesID(self.y_id(i)),
+                self.interval,
+                self.resolution,
+                self.degree,
+                i).series()
+            for i in range(count)]).T
         df.columns = [f'{prefix}{i}' for i in range(count)]
         return df
 

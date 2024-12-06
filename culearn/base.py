@@ -1,3 +1,5 @@
+import pandas as pd
+
 from abc import abstractmethod
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -6,7 +8,6 @@ from itertools import chain
 from math import gcd
 from typing import *
 
-import pandas as pd
 from culearn.util import tupleclass, Time
 
 
@@ -145,7 +146,7 @@ class TimeSeriesID(StrExtMixin):
     """
     Composite time series ID, where:
 
-    - source: Time series source (e.g., energy consumer).
+    - source: Time series source (e.g., energy consumer or cluster).
     - value_type: Type of time series values (e.g., active or reactive power)
     - category: Source category (e.g., residential or commercial energy consumer).
     """
@@ -229,6 +230,28 @@ class StreamingTimeSeries(TimeSeries):
     def stream(self) -> Iterable[TimeSeriesTuple]:
         """Returns time series as a stream of tuples."""
         pass
+
+
+class TimeSeriesInMemory(PandasTimeSeries, StreamingTimeSeries):
+    def __init__(self, ts_id: TimeSeriesID, values: pd.Series):
+        """
+        Time series in whose values and timestamps are stored in memory.
+
+        :param ts_id: Time series ID.
+        :param values: Time series values with time index.
+        """
+        if type(values.index) != pd.DatetimeIndex:
+            raise Exception('Index of values has to be pandas.DatetimeIndex.')
+
+        super().__init__(ts_id)
+        self.values = values
+
+    def series(self) -> pd.Series:
+        return self.values
+
+    def stream(self) -> Iterable[TimeSeriesTuple]:
+        for t, v in self.values.items():
+            yield TimeSeriesTuple(Time.py(t), float(v))
 
 
 class TimeSeriesDataFrame(pd.DataFrame, StrMixin):

@@ -1,17 +1,17 @@
-from math import floor, ceil
+import tensorflow as tf
 
-import keras
-from culearn.features import *
-from culearn.util import Time, ignore_warnings, parallel
-from keras import layers
-from keras.callbacks import EarlyStopping
-from keras.engine.keras_tensor import KerasTensor
-from keras.optimizers import Optimizer
+from math import floor, ceil
+from sklearn.tree import DecisionTreeRegressor
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_percentage_error
 from sklearn.preprocessing import FunctionTransformer, StandardScaler, MinMaxScaler, RobustScaler, MaxAbsScaler
 from sklearn.svm import SVR, NuSVR
 from statsmodels.formula.api import quantreg
+from tensorflow.keras import layers as tfl
 from xgboost import XGBRegressor
+
+from culearn.features import *
+from culearn.util import Time, ignore_warnings, parallel
 
 
 class MultiRegressor:
@@ -39,8 +39,8 @@ class MultiRegressor:
     def fit(self, x: Sequence[np.array], y: Sequence[np.array]):
         """Fits underlying regressors with equal-size sequences of inputs and outputs."""
         if self.incremental:
-            self.__x = x = [np.row_stack((self.__x[i], x[i])) for i in range(self.n)] if self.__x else x
-            self.__y = y = [np.row_stack((self.__y[i], y[i])) for i in range(self.n)] if self.__y else y
+            self.__x = x = [np.vstack((self.__x[i], x[i])) for i in range(self.n)] if self.__x else x
+            self.__y = y = [np.vstack((self.__y[i], y[i])) for i in range(self.n)] if self.__y else y
         parallel(lambda i: self.__regressors[i].fit(x[i], y[i]), range(self.n))
         return self
 
@@ -104,20 +104,20 @@ class MultiQuantileRegressor(StrMixin):
         return self.fit(x, y).predict(x)
 
 
-class DFNN(layers.Layer, StrMixin):
-    def __init__(self, forward_layers: Callable[[], Iterable[layers.Layer]], *args, **kwargs):
-        """Deep Feed-forward Neural Network (DFNN)."""
+class DNN(tfl.Layer, StrMixin):
+    def __init__(self, f: Callable[[], Iterable[tfl.Layer]], *args, **kwargs):
+        """Deep Neural Network (DNN)."""
 
         super().__init__(*args, **kwargs)
-        self.forward_layers = list(forward_layers())
+        self._layers = list(f())
 
     def call(self, inputs, training=None, mask=None):
-        for _layer in self.forward_layers:
+        for _layer in self._layers:
             inputs = _layer(inputs)
         return inputs
 
 
-class DCNN(DFNN):
+class CNN(DNN):
     def __init__(self,
                  depth: 'int >= 0',
                  n_filters: 'int > 0',
@@ -126,8 +126,7 @@ class DCNN(DFNN):
                  drop: '0 < float < 1' = 0.5,
                  *args, **kwargs):
         """
-        A series of Convolution Neural Networks (CNNs), with alternating convolution, pooling and dropout layers,
-        namely Deep CNN (DCNN).
+        A series of Convolution Neural Networks (CNNs), with alternating convolution, pooling and dropout layers.
 
         :param depth: Number of alternating convolution, pooling and dropout layers (number of layer triples).
         :param n_filters: Number of convolution filters in each convolution layer.
@@ -141,27 +140,27 @@ class DCNN(DFNN):
         :param kwargs: Base class key-value arguments.
         """
 
-        def create_layers() -> Iterable[layers.Layer]:
+        def create_layers() -> Iterable[tfl.Layer]:
             n_dim = 1 if isinstance(shape, int) else len(list(shape))
             conv, pool = self.__conv_and_pool(n_dim, avg)
             for _ in range(depth):
                 yield conv(filters=n_filters, kernel_size=shape, activation='relu', padding='same')
                 yield pool(pool_size=shape)
-                yield layers.Dropout(rate=drop)
+                yield tfl.Dropout(rate=drop)
 
         super().__init__(create_layers, *args, **kwargs)
 
     @staticmethod
     def __conv_and_pool(n_dim: 'int > 0', avg: bool):
         if n_dim == 1:
-            return layers.Conv1D, (layers.AveragePooling1D if avg else layers.MaxPooling1D)
+            return tfl.Conv1D, (tfl.AveragePooling1D if avg else tfl.MaxPooling1D)
         elif n_dim == 2:
-            return layers.Conv2D, (layers.AveragePooling2D if avg else layers.MaxPooling2D)
+            return tfl.Conv2D, (tfl.AveragePooling2D if avg else tfl.MaxPooling2D)
         else:
-            return layers.Conv3D, (layers.AveragePooling3D if avg else layers.MaxPooling3D)
+            return tfl.Conv3D, (tfl.AveragePooling3D if avg else tfl.MaxPooling3D)
 
 
-class SAE(DFNN):
+class SAE(DNN):
     def __init__(self,
                  depth: 'int >= 0',
                  edge: 'int > 0',
@@ -180,10 +179,10 @@ class SAE(DFNN):
         :param kwargs: Base class key-value arguments.
         """
 
-        def create_layers() -> Iterable[layers.Layer]:
+        def create_layers() -> Iterable[tfl.Layer]:
             for w in self.__width(depth, edge, middle):
-                yield layers.Dense(units=w, activation='tanh')
-                yield layers.Dropout(rate=drop)
+                yield tfl.Dense(units=w, activation='tanh')
+                yield tfl.Dropout(rate=drop)
 
         super().__init__(create_layers, *args, **kwargs)
 
@@ -203,13 +202,20 @@ class SAE(DFNN):
         return width
 
 
-class S2S_DNN(layers.Layer, StrMixin):
+class S2S_DNN(tfl.Layer, StrMixin):
     def __init__(self, *args, **kwargs):
         """Abstract Sequence-to-Sequence (S2S) Deep Neural Network (DNN)."""
         super().__init__(*args, **kwargs)
 
     @abstractmethod
-    def _s2s(self, y_past: KerasTensor, x_future: KerasTensor) -> KerasTensor:
+    def _s2s(self, y_past, x_future):
+        """
+        Creates the S2S-DNN structure.
+
+        :param y_past: Tensor with endogenous input values (past).
+        :param x_future: Tensor with exogenous input values (future).
+        :return: Output layer of the S2S-DNN structure.
+        """
         pass
 
     def call(self, inputs, training=None, mask=None):
@@ -226,23 +232,31 @@ class S2S_DNN(layers.Layer, StrMixin):
 
 class S2S_RNN(S2S_DNN):
     def __init__(self,
-                 units: 'int >= 0' = 64,
-                 sae_depth: 'int >= 0' = 0,
-                 sae_middle: 'int > 0' = 1,
-                 sae_drop: '0 < float < 1' = 0.5,
+                 units: 'int > 0' = 64,
+                 cnn_depth: 'int >= 0' = 5,
+                 cnn_filters: 'int > 0' = 256,
+                 cnn_shape: 'int > 1' = 2,
+                 sae_depth: 'int >= 0' = 11,
+                 sae_middle: 'int > 0' = 16,
+                 drop: '0 < float < 1' = 0.5,
                  *args, **kwargs):
         """
         Abstract Sequence-to-Sequence (S2S) Recurrent Neural Network (RNN) with attention and bidirectional encoder.
         The total length of the S2S context vector in both directions will be 2*S*U, where S is the number of states
         obtained by one recurrent unit (which depends on the type of unit) and U is the number of units that will be
-        used to encode the input sequence in one direction. Optionally, to prevent long and noisy input sequences in
-        destabilizing the network, S2S-RNN can be combined with :class:`SAE` layers that will be used to denoise the
-        S2S context vector and increase the representation capacity.
+        used to encode the input sequence in one direction.
+
+        Optionally, :class:`CNN` can be prepended to S2S-RNN to prevent long and noisy input sequences in destabilizing
+        the network and :class:`SAE` can be applied to the S2S context to denoise the context vector and increase the
+        representation capacity.
 
         :param units: Number of recurrent units that will be used to encode the input sequence in one direction.
+        :param cnn_depth: Number of CNN layers (CNN will not be used if the number is 0).
+        :param cnn_filters: Number of CNN filters.
+        :param cnn_shape: Shape of 1D CNN filters and pools.
         :param sae_depth: Number of SAE layers (SAE will not be used if the number is 0).
         :param sae_middle: Number of neurons in the middle of SAE.
-        :param sae_drop: SAE dropout rate.
+        :param drop: Dropout rate for CNN and SAE layers.
         :param args: Base class arguments.
         :param kwargs: Base class key-value arguments.
         """
@@ -251,15 +265,17 @@ class S2S_RNN(S2S_DNN):
 
         bi_units = 2 * units
         rnn = self._cell_type()
-        self.rnn_encoder = layers.Bidirectional(rnn(units, return_state=True, return_sequences=False))
+
+        self.cnn = CNN(depth=cnn_depth, n_filters=cnn_filters, shape=cnn_shape, drop=drop)
+        self.rnn_encoder = tfl.Bidirectional(rnn(units, return_state=True, return_sequences=False))
         self.rnn_decoder = rnn(bi_units, return_state=False, return_sequences=True)
-        self.rnn_state_sae = [SAE(sae_depth, bi_units, sae_middle, sae_drop) for _ in self._cell_state_index()]
-        self.rnn_state_concat = [layers.Concatenate() for _ in self._cell_state_index()]
-        self.rnn_attention = layers.Attention()
-        self.s2s_concat = layers.Concatenate()
+        self.rnn_state_sae = [SAE(sae_depth, bi_units, sae_middle, drop) for _ in self._cell_state_index()]
+        self.rnn_state_concat = [tfl.Concatenate() for _ in self._cell_state_index()]
+        self.rnn_attention = tfl.Attention()
+        self.s2s_concat = tfl.Concatenate()
 
     @abstractmethod
-    def _cell_type(self) -> Type[layers.RNN]:
+    def _cell_type(self) -> Type[tfl.RNN]:
         """Type of RNN cell."""
         pass
 
@@ -268,7 +284,7 @@ class S2S_RNN(S2S_DNN):
         """Index of RNN encoded states in both directions (forward and backward)."""
         pass
 
-    def rnn_states(self, encoded: Sequence[KerasTensor]) -> Sequence[SAE]:
+    def rnn_states(self, encoded):
         states = []
         indexes = self._cell_state_index()
         for i in range(len(indexes)):
@@ -278,21 +294,24 @@ class S2S_RNN(S2S_DNN):
         return states
 
     @staticmethod
-    def rnn_output(encoded: Sequence[KerasTensor]):
-        return encoded[0]
+    def rnn_output(encoded, decoded):
+        output = tf.expand_dims(encoded[0], axis=1)
+        return tf.tile(output, [1, tf.shape(decoded)[1], 1])
 
-    def _s2s(self, y_past: KerasTensor, x_future: KerasTensor) -> KerasTensor:
-        rnn_encoded = self.rnn_encoder(y_past)
+    def _s2s(self, y_past, x_future):
+        cnn = self.cnn(y_past)
+        rnn_encoded = self.rnn_encoder(cnn)
         rnn_decoded = self.rnn_decoder(x_future, initial_state=self.rnn_states(rnn_encoded))
-        rnn_encoded_attention = self.rnn_attention([rnn_decoded, self.rnn_output(rnn_encoded)])
-        return self.s2s_concat([rnn_decoded, rnn_encoded_attention])
+        rnn_output = self.rnn_output(rnn_encoded, rnn_decoded)
+        rnn_attention = self.rnn_attention([rnn_decoded, rnn_output])
+        return self.s2s_concat([rnn_decoded, rnn_attention])
 
 
 class S2S_LSTM(S2S_RNN):
     """:class:`S2S_RNN` based on Long Short-Term Memory (LSTM) cells, that have 2 states (hidden and cell states)."""
 
-    def _cell_type(self) -> Type[layers.RNN]:
-        return layers.LSTM
+    def _cell_type(self) -> Type[tfl.RNN]:
+        return tfl.LSTM
 
     def _cell_state_index(self) -> Sequence[Tuple]:
         return [(1, 3), [2, 4]]  # Hidden and cell states in both directions.
@@ -301,46 +320,11 @@ class S2S_LSTM(S2S_RNN):
 class S2S_GRU(S2S_RNN):
     """:class:`S2S_RNN` based on Gated Recurrent Unit (GRU) cells, that have only 1 state (hidden state)."""
 
-    def _cell_type(self) -> Type[layers.RNN]:
-        return layers.GRU
+    def _cell_type(self) -> Type[tfl.RNN]:
+        return tfl.GRU
 
     def _cell_state_index(self) -> Sequence[Tuple]:
         return [(1, 2)]  # Hidden states in both directions.
-
-
-class DTSN(S2S_DNN):
-    def __init__(self,
-                 cnn_depth: 'int >= 0' = 5,
-                 cnn_filters: 'int > 0' = 256,
-                 cnn_shape: 'int > 1' = 2,
-                 s2s_rnn: Type[S2S_RNN] = S2S_LSTM,
-                 s2s_units: 'int > 0' = 64,
-                 sae_depth: 'int >= 0' = 11,
-                 sae_middle: 'int > 0' = 16,
-                 drop: '0 < float < 1' = 0.5,
-                 *args, **kwargs):
-        """
-        Deep Time Series Network (DTSN) = :class:`DCNN` + :class:`S2S_RNN` combined with :class:`SAE`.
-
-        :param cnn_depth: Number of CNN layers (DCNN will not be used if the number is 0).
-        :param cnn_filters: Number of CNN filters.
-        :param cnn_shape: Shape of 1D CNN filters and pools.
-        :param s2s_rnn: Type of S2S-RNN model that will be used to construct DTSN.
-        :param s2s_units: Number of encoded recurrent units in one S2S-RNN direction.
-        :param sae_depth: Number of SAE layers (SAE will not be used if the number is 0).
-        :param sae_middle: Number of neurons in the middle of SAE.
-        :param drop: Dropout rate for CNN and SAE layers.
-        :param args: Base class arguments.
-        :param kwargs: Base class key-value arguments.
-        """
-        super().__init__(*args, **kwargs)
-        self.dcnn = DCNN(depth=cnn_depth, n_filters=cnn_filters, shape=cnn_shape, drop=drop)
-        self.s2s = s2s_rnn(units=s2s_units, sae_depth=sae_depth, sae_middle=sae_middle, sae_drop=drop)
-
-    def _s2s(self, y_past: KerasTensor, x_future: KerasTensor) -> KerasTensor:
-        dnn = self.dcnn(y_past)
-        dnn = self.s2s([dnn, x_future])
-        return dnn
 
 
 class S2S(StrMixin):
@@ -404,9 +388,9 @@ class S2S(StrMixin):
 
 class DeepS2S(S2S):
     def __init__(self,
-                 hidden: Callable[[], S2S_DNN] = lambda: DTSN(),
-                 output: Callable[[int], layers.Layer] = lambda y_count: layers.Dense(units=y_count),
-                 optimizer: Union[str, Optimizer] = 'adam',
+                 hidden: Callable[[], S2S_DNN] = lambda: S2S_LSTM(),
+                 output: Callable[[int], tfl.Layer] = lambda y_count: tfl.Dense(units=y_count),
+                 optimizer: Union[str, tf.keras.optimizers.Optimizer] = 'adam',
                  loss: Union[str, Callable[[any, any], any]] = 'mse',
                  metric: Union[str, Callable[[any, any], any]] = 'mean_absolute_percentage_error',
                  epochs: 'int > 0' = 200,
@@ -419,9 +403,9 @@ class DeepS2S(S2S):
 
         :param hidden: Returns hidden S2S-DNN model.
         :param output: Returns output layer given the number of y variables.
-        :param optimizer: Optimizer that will be used to train the model. See `keras.optimizers`.
-        :param loss: The loss function that will be used to train the model. See `keras.losses`.
-        :param metric: Metric that will be used to evaluate the model (does not affect training). See `keras.metrics`.
+        :param optimizer: Optimizer that will be used to train the model. See `tf.keras.optimizers`.
+        :param loss: The loss function that will be used to train the model. See `tf.keras.losses`.
+        :param metric: Metric that will be used to evaluate the model (does not affect training). See `tf.keras.metrics`.
         :param epochs: Number of training iterations over the complete training dataset.
         :param batch: Batch (sample) size for training iterations in each epoch.
         :param patience: Number of epochs to wait before early stopping.
@@ -440,31 +424,32 @@ class DeepS2S(S2S):
         self.verbose = verbose
 
     @ignore_warnings
-    def compile(self, x_count: int, y_count: int, lookback: int, horizon: int) -> keras.Model:
-        y_past = layers.Input(shape=(lookback, y_count))
-        x_future = layers.Input(shape=(horizon, x_count))
+    def compile(self, x_count: int, y_count: int, lookback: int, horizon: int) -> tf.keras.Model:
+        y_past = tfl.Input(shape=(lookback, y_count))
+        x_future = tfl.Input(shape=(horizon, x_count))
         hidden = self.hidden()([y_past, x_future])
         y_future = self.output(y_count)(hidden)
-        model = keras.Model(inputs=[y_past, x_future], outputs=y_future)
+        model = tf.keras.Model(inputs=[y_past, x_future], outputs=y_future)
         model.compile(optimizer=self.optimizer, loss=self.loss, metrics=[self.metric])
         if self.verbose:
             model.summary()
         return model
 
     @ignore_warnings
-    def fit(self, model: keras.Model, x_future: np.array, y_past: np.array, y_future: np.array) -> pd.DataFrame:
+    def fit(self, model: tf.keras.Model, x_future: np.array, y_past: np.array, y_future: np.array) -> pd.DataFrame:
+        es = tf.keras.callbacks.EarlyStopping(monitor='loss', mode='min', patience=self.patience)
         h = model.fit(x=[y_past, x_future],
                       y=y_future,
                       epochs=self.epochs,
                       batch_size=self.batch,
-                      callbacks=[EarlyStopping(monitor='loss', mode='min', patience=self.patience)],
+                      callbacks=[es],
                       validation_split=self.validation,
                       verbose=int(self.verbose),
                       shuffle=False)
         return pd.DataFrame(h.history).rename_axis('epoch')
 
     @ignore_warnings
-    def predict(self, model: keras.Model, x_future: np.array, y_past: np.array) -> np.array:
+    def predict(self, model: tf.keras.Model, x_future: np.array, y_past: np.array) -> np.array:
         return model.predict([y_past, x_future], verbose=0)
 
 
@@ -473,6 +458,8 @@ class ShallowS2S(S2S):
         'esvm': SVR,
         'nsvm': NuSVR,
         'xgb': XGBRegressor,
+        'rf': RandomForestRegressor,
+        'dt': DecisionTreeRegressor
     }
 
     def __init__(self,
@@ -487,7 +474,9 @@ class ShallowS2S(S2S):
                methods, or a case-insensitive abbreviation for one of the following models: <br/>
             - 'eSVM': epsilon Support Vector Machines, <br/>
             - 'nSVM': nu Support Vector Machines, <br/>
-            - 'XGB': eXtreme Gradient Boosting.
+            - 'XGB': eXtreme Gradient Boosting, <br/>
+            - 'RF': Random Forest, <br/>
+            - 'DT': Decision Tree.
         :param incremental: Whether to imitate incremental learning (true) or to retrain the model on each fit (false).
                The incremental learning is imitated by preserving the x and y values after each fit, and by joining the
                preserved values with the new ones next time the fit is called. Note that the true incremental learning
@@ -633,8 +622,8 @@ class TimeSeriesRegressor(StrMixin):
         y_lookback = self.y_scaler.transform(y.values)  # true values
         x_horizon = self.x_scaler.transform(x_selected.values)  # true values
         y_horizon = np.empty((self.horizon, len(y.columns)))  # dummy values
-        _, x_future = self.base.transform(np.row_stack((x_lookback, x_horizon)), self.lookback, self.horizon)
-        y_past, _ = self.base.transform(np.row_stack((y_lookback, y_horizon)), self.lookback, self.horizon)
+        _, x_future = self.base.transform(np.vstack((x_lookback, x_horizon)), self.lookback, self.horizon)
+        y_past, _ = self.base.transform(np.vstack((y_lookback, y_horizon)), self.lookback, self.horizon)
         y_pred_3d = self.base.predict(self.model, x_future, y_past)
         y_pred_2d = y_pred_3d.reshape(-1, np.shape(y_pred_3d)[2])
         y_pred_data = self.y_scaler.inverse_transform(y_pred_2d)
@@ -657,10 +646,11 @@ class TimeSeriesRegressor(StrMixin):
         return f'{type(self).__name__}({self.base})'
 
 
-class TimeSeriesGroupRegressor:
+class MultiSeriesRegressor:
     def __init__(self, base: TimeSeriesRegressor):
         """
-        Wraps around a regressor that will be applied to a group of time series.
+        Applies one time series regressor to multiple output time series data frames
+        (e.g., time series of cumulants for multiple value types in the same cluster).
 
         :param base: Underlying time series regressor.
         """
@@ -668,7 +658,7 @@ class TimeSeriesGroupRegressor:
 
     def fit(self, x: pd.DataFrame, y: Sequence[pd.DataFrame]):
         """
-        Trains the underlying regressor using the input time series (x) and a group of output time series (y).
+        Trains the underlying regressor on multiple input and output time series (x and y).
 
         :param x: Input time series values indexed by timestamp.
         :param y: Output time series values indexed by timestamp.
@@ -678,7 +668,7 @@ class TimeSeriesGroupRegressor:
 
     def predict(self, x: pd.DataFrame, y: Sequence[pd.DataFrame]) -> Sequence[pd.DataFrame]:
         """
-        Utilizes the underlying regressor on the input time series (x) and a group of output time series (y).
+        Utilizes the underlying regressor on multiple input and output time series (x and y).
 
         :param x: Input time series values in the forecast horizon indexed by timestamp.
         :param y: Output time series values in the lookback range indexed by timestamp.

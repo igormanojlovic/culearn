@@ -1,28 +1,35 @@
 import cProfile
 import functools
-import os
-import pstats
-import time
-import warnings
-from datetime import datetime, timedelta
-from itertools import combinations
-from multiprocessing.pool import ThreadPool
-from typing import *
-
 import marshmallow_dataclass as mm
 import numpy as np
 import pandas as pd
+import os
+import pstats
+import scipy
+import time
+import warnings
+
+from datetime import datetime, timedelta
+from itertools import combinations
 from kneed import KneeLocator
-from scipy.stats import norm
-from scipy.stats import pearsonr
+from multiprocessing.pool import ThreadPool
 from sklearn.linear_model import LinearRegression
 from statsmodels.api import tsa
+from typing import *
 from workalendar.core import CoreCalendar
 from workalendar.registry import registry as calendar_registry
 
 
+def applymap(df: pd.DataFrame, f: Callable[[Any], Any]):
+    """"Preserves backward compatibility by applying either map or applymap function to data frame."""
+    try:
+        return df.map(f)
+    except:
+        return df.applymap(f)
+
+
 def tupleclass(c):
-    """Class decorator that wraps around dataclasses and marshmallow_dataclass and presents class as tuple."""
+    """Class decorator that wraps around dataclasses and marshmallow_dataclass to present class as tuple."""
     return mm.dataclass(c, repr=True, eq=True, order=True, frozen=True, unsafe_hash=True)
 
 
@@ -141,7 +148,7 @@ class Math:
             return qcf3(q) + 1 / n * ((((q ** 3 - 3 * q) * k4) / 24) - ((((2 * q ** 3) - 5 * q) * k3 ** 2) / 36))
 
         def quantile():
-            q = norm.ppf(p)
+            q = scipy.stats.norm.ppf(p)
             if k3 is None:
                 return q
             if k4 is None:
@@ -211,9 +218,10 @@ class Math:
         """
         nlags = int(len(x) * 0.05) if max_lag is None else max_lag
         result = pd.DataFrame([tsa.pacf(x, nlags=nlags) for _, x in x.items()], index=x.columns).T
-        return result.applymap(lambda s: s if -1 <= s <= 1 else 0)
+        return applymap(result, lambda s: s if -1 <= s <= 1 else 0)
 
     @staticmethod
+    @ignore_warnings
     def mcorr(x: pd.DataFrame, y: pd.DataFrame) -> Mapping[str, float]:
         """
         Returns the multiple correlation coefficient between all independent variables x and each dependent variable y.
@@ -227,5 +235,5 @@ class Math:
             mlr = LinearRegression()
             mlr.fit(x, y[y_col])
             y_pred = mlr.predict(x)
-            corr[y_col] = pearsonr(y_pred, y[y_col])[0]
+            corr[y_col] = scipy.stats.pearsonr(y_pred, y[y_col])[0]
         return corr

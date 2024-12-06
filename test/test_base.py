@@ -1,6 +1,8 @@
 from itertools import product
 from unittest import TestCase
 
+import pandas as pd
+
 from culearn.base import *
 from numpy.testing import assert_array_equal
 from parameterized import parameterized
@@ -229,6 +231,28 @@ class TestTimeSeriesSegment(TestCase, TestEquatable):
         yield TimeSeriesSegment(Time.unix(1), Time.unix(1), 1, 1, 1, 2, 1, 1)
         yield TimeSeriesSegment(Time.unix(1), Time.unix(1), 1, 1, 1, 1, 2, 1)
         yield TimeSeriesSegment(Time.unix(1), Time.unix(1), 1, 1, 1, 1, 1, 2)
+
+
+class TestTimeSeriesInMemory(TestCase):
+    def test_index(self):
+        values = pd.Series(range(10), pd.DatetimeIndex(range(10)))
+        ts = TimeSeriesInMemory(TimeSeriesID(), values)
+        assert_array_equal(values, ts.series())
+
+    def test_series(self):
+        values = pd.Series(range(10))
+        self.assertRaises(Exception, lambda: TimeSeriesInMemory(TimeSeriesID(), values))
+
+    def test_stream(self):
+        values = [3, 4]
+        timestamps = [datetime(2020, 1, 1), datetime(2021, 1, 1)]
+        ts = TimeSeriesInMemory(TimeSeriesID(), pd.Series(values, pd.DatetimeIndex(timestamps)))
+        tuples = list(ts.stream())
+        self.assertEqual(len(values), len(tuples), "Number of tuples.")
+        self.assertEqual(values[0], tuples[0].value, "First value.")
+        self.assertEqual(values[1], tuples[1].value, "Second value.")
+        self.assertEqual(timestamps[0], tuples[0].timestamp, "First timestamp.")
+        self.assertEqual(timestamps[1], tuples[1].timestamp, "Second timestamp.")
 
 
 class TestTimeSeriesPrediction(TestCase):

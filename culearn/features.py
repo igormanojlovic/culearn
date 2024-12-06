@@ -1,13 +1,14 @@
+import numpy as np
+import scipy
+
 from collections import namedtuple
 from math import sqrt
-
-import numpy as np
-from culearn.base import *
-from culearn.entropy import mi as mutual_information
-from culearn.util import Math
-from scipy.stats import norm
+from npeet.entropy_estimators import mi
 from sklearn import decomposition
 from workalendar.core import CoreCalendar
+
+from culearn.base import *
+from culearn.util import Math, applymap, ignore_warnings
 
 
 class TimeEncoder(StrMixin):
@@ -67,7 +68,9 @@ class WeekOfYear(PeriodicTimeEncoder):
         return 52
 
     def _index(self, t: datetime) -> int:
-        return t.isocalendar().week - 1
+        c = t.isocalendar()
+        w = c[1] if isinstance(c, tuple) else c.week # Backward compatibility fix.
+        return w - 1
 
 
 class DayOfWeek(PeriodicTimeEncoder):
@@ -624,8 +627,8 @@ class JMIM(_FilteringFeatureSelector):
         self.k = k
 
     def _fit(self, x: pd.DataFrame, y: pd.Series) -> pd.Series:
-        mi = pd.Series([mutual_information(x[i], y, k=self.k) for i in x], index=x.columns)
-        s = [min([mi[k] + mutual_information(x[i], y, x[k], k=self.k) for k in x if k != i]) for i in x]
+        m = pd.Series([mi(x[i], y, k=self.k) for i in x], index=x.columns)
+        s = [min([m[k] + mi(x[i], y, x[k], k=self.k) for k in x if k != i]) for i in x]
         return pd.Series(s, index=x.columns)
 
 
@@ -707,15 +710,16 @@ class PACF(LagSelector):
         self.ci = float('nan')
 
     @staticmethod
+    @ignore_warnings
     def __leg(scores, ci):
-        leg = scores.applymap(lambda s: 0 if abs(s) < ci else pow(s - ci, 2))
+        leg = applymap(scores, lambda s: 0 if abs(s) < ci else pow(s - ci, 2))
         leg = leg.abs().iloc[::-1].cumsum(axis=0).iloc[::-1]
         leg = 1 - np.cumsum(leg / np.sum(leg, axis=0), axis=0)
         return leg.mean(axis=1)
 
     def _fit_predict(self, x: pd.DataFrame):
         self.scores = Math.pacf(x, self.max_lag)
-        self.ci = norm.ppf(0.5 + self.p / 2) / sqrt(len(x))
+        self.ci = scipy.stats.norm.ppf(0.5 + self.p / 2) / sqrt(len(x))
         return Math.knee(self.__leg(self.scores, self.ci)).x
 
     def summary(self) -> pd.DataFrame:

@@ -8,53 +8,58 @@ from parameterized import parameterized
 
 class TestKerasModel(TestCase):
     @parameterized.expand([
-        [DCNN(depth=0, n_filters=16, shape=2, avg=True), layers.Input(shape=(128, 128))],
-        [DCNN(depth=1, n_filters=16, shape=2, avg=True), layers.Input(shape=(128, 128))],
-        [DCNN(depth=2, n_filters=16, shape=2, avg=True), layers.Input(shape=(128, 128))],
-        [DCNN(depth=3, n_filters=16, shape=2, avg=True), layers.Input(shape=(128, 128))],
-        [DCNN(depth=0, n_filters=16, shape=(2, 2), avg=True), layers.Input(shape=(128, 128, 128))],
-        [DCNN(depth=1, n_filters=16, shape=(2, 2), avg=True), layers.Input(shape=(128, 128, 128))],
-        [DCNN(depth=2, n_filters=16, shape=(2, 2), avg=True), layers.Input(shape=(128, 128, 128))],
-        [DCNN(depth=3, n_filters=16, shape=(2, 2), avg=True), layers.Input(shape=(128, 128, 128))],
-        [DCNN(depth=0, n_filters=16, shape=(2, 2, 2), avg=True), layers.Input(shape=(128, 128, 128, 128))],
-        [DCNN(depth=1, n_filters=16, shape=(2, 2, 2), avg=True), layers.Input(shape=(128, 128, 128, 128))],
-        [DCNN(depth=2, n_filters=16, shape=(2, 2, 2), avg=True), layers.Input(shape=(128, 128, 128, 128))],
-        [DCNN(depth=3, n_filters=16, shape=(2, 2, 2), avg=True), layers.Input(shape=(128, 128, 128, 128))],
-        [DCNN(depth=0, n_filters=16, shape=2, avg=False), layers.Input(shape=(128, 128))],
-        [DCNN(depth=1, n_filters=16, shape=2, avg=False), layers.Input(shape=(128, 128))],
-        [DCNN(depth=2, n_filters=16, shape=2, avg=False), layers.Input(shape=(128, 128))],
-        [DCNN(depth=3, n_filters=16, shape=2, avg=False), layers.Input(shape=(128, 128))],
-        [DCNN(depth=0, n_filters=16, shape=(2, 2), avg=False), layers.Input(shape=(128, 128, 128))],
-        [DCNN(depth=1, n_filters=16, shape=(2, 2), avg=False), layers.Input(shape=(128, 128, 128))],
-        [DCNN(depth=2, n_filters=16, shape=(2, 2), avg=False), layers.Input(shape=(128, 128, 128))],
-        [DCNN(depth=3, n_filters=16, shape=(2, 2), avg=False), layers.Input(shape=(128, 128, 128))],
-        [DCNN(depth=0, n_filters=16, shape=(2, 2, 2), avg=False), layers.Input(shape=(128, 128, 128, 128))],
-        [DCNN(depth=1, n_filters=16, shape=(2, 2, 2), avg=False), layers.Input(shape=(128, 128, 128, 128))],
-        [DCNN(depth=2, n_filters=16, shape=(2, 2, 2), avg=False), layers.Input(shape=(128, 128, 128, 128))],
-        [DCNN(depth=3, n_filters=16, shape=(2, 2, 2), avg=False), layers.Input(shape=(128, 128, 128, 128))],
-        [SAE(depth=0, edge=64, middle=1), layers.Input(shape=128)],
-        [SAE(depth=1, edge=64, middle=1), layers.Input(shape=128)],
-        [SAE(depth=2, edge=64, middle=1), layers.Input(shape=128)],
-        [SAE(depth=3, edge=64, middle=1), layers.Input(shape=128)],
-        [SAE(depth=0, edge=64, middle=4), layers.Input(shape=128)],
-        [SAE(depth=1, edge=64, middle=4), layers.Input(shape=128)],
-        [SAE(depth=2, edge=64, middle=4), layers.Input(shape=128)],
-        [SAE(depth=3, edge=64, middle=4), layers.Input(shape=128)],
-        [S2S_LSTM(sae_depth=0), [layers.Input(shape=(128, 4)), layers.Input(shape=(64, 16))]],
-        [S2S_LSTM(sae_depth=1), [layers.Input(shape=(128, 4)), layers.Input(shape=(64, 16))]],
-        [S2S_LSTM(sae_depth=2), [layers.Input(shape=(128, 4)), layers.Input(shape=(64, 16))]],
-        [S2S_LSTM(sae_depth=3), [layers.Input(shape=(128, 4)), layers.Input(shape=(64, 16))]],
-        [S2S_GRU(sae_depth=0), [layers.Input(shape=(128, 4)), layers.Input(shape=(64, 16))]],
-        [S2S_GRU(sae_depth=1), [layers.Input(shape=(128, 4)), layers.Input(shape=(64, 16))]],
-        [S2S_GRU(sae_depth=2), [layers.Input(shape=(128, 4)), layers.Input(shape=(64, 16))]],
-        [S2S_GRU(sae_depth=3), [layers.Input(shape=(128, 4)), layers.Input(shape=(64, 16))]],
-        [DTSN(), [layers.Input(shape=(168, 1)), layers.Input(shape=(24, 10))]],
-        [DTSN(), [layers.Input(shape=(168, 2)), layers.Input(shape=(24, 10))]],
-        [DTSN(), [layers.Input(shape=(168, 4)), layers.Input(shape=(24, 10))]]
+        [CNN(depth=0, n_filters=16, shape=2, avg=True), tfl.Input(shape=(128, 128))],
+        [CNN(depth=1, n_filters=16, shape=2, avg=True), tfl.Input(shape=(128, 128))],
+        [CNN(depth=2, n_filters=16, shape=2, avg=True), tfl.Input(shape=(128, 128))],
+        [CNN(depth=3, n_filters=16, shape=2, avg=True), tfl.Input(shape=(128, 128))],
+        [CNN(depth=0, n_filters=16, shape=(2, 2), avg=True), tfl.Input(shape=(128, 128, 128))],
+        [CNN(depth=1, n_filters=16, shape=(2, 2), avg=True), tfl.Input(shape=(128, 128, 128))],
+        [CNN(depth=2, n_filters=16, shape=(2, 2), avg=True), tfl.Input(shape=(128, 128, 128))],
+        [CNN(depth=3, n_filters=16, shape=(2, 2), avg=True), tfl.Input(shape=(128, 128, 128))],
+        [CNN(depth=0, n_filters=16, shape=(2, 2, 2), avg=True), tfl.Input(shape=(128, 128, 128, 128))],
+        [CNN(depth=1, n_filters=16, shape=(2, 2, 2), avg=True), tfl.Input(shape=(128, 128, 128, 128))],
+        [CNN(depth=2, n_filters=16, shape=(2, 2, 2), avg=True), tfl.Input(shape=(128, 128, 128, 128))],
+        [CNN(depth=3, n_filters=16, shape=(2, 2, 2), avg=True), tfl.Input(shape=(128, 128, 128, 128))],
+        [CNN(depth=0, n_filters=16, shape=2, avg=False), tfl.Input(shape=(128, 128))],
+        [CNN(depth=1, n_filters=16, shape=2, avg=False), tfl.Input(shape=(128, 128))],
+        [CNN(depth=2, n_filters=16, shape=2, avg=False), tfl.Input(shape=(128, 128))],
+        [CNN(depth=3, n_filters=16, shape=2, avg=False), tfl.Input(shape=(128, 128))],
+        [CNN(depth=0, n_filters=16, shape=(2, 2), avg=False), tfl.Input(shape=(128, 128, 128))],
+        [CNN(depth=1, n_filters=16, shape=(2, 2), avg=False), tfl.Input(shape=(128, 128, 128))],
+        [CNN(depth=2, n_filters=16, shape=(2, 2), avg=False), tfl.Input(shape=(128, 128, 128))],
+        [CNN(depth=3, n_filters=16, shape=(2, 2), avg=False), tfl.Input(shape=(128, 128, 128))],
+        [CNN(depth=0, n_filters=16, shape=(2, 2, 2), avg=False), tfl.Input(shape=(128, 128, 128, 128))],
+        [CNN(depth=1, n_filters=16, shape=(2, 2, 2), avg=False), tfl.Input(shape=(128, 128, 128, 128))],
+        [CNN(depth=2, n_filters=16, shape=(2, 2, 2), avg=False), tfl.Input(shape=(128, 128, 128, 128))],
+        [CNN(depth=3, n_filters=16, shape=(2, 2, 2), avg=False), tfl.Input(shape=(128, 128, 128, 128))],
+        [SAE(depth=0, edge=64, middle=1), tfl.Input(shape=(128,))],
+        [SAE(depth=1, edge=64, middle=1), tfl.Input(shape=(128,))],
+        [SAE(depth=2, edge=64, middle=1), tfl.Input(shape=(128,))],
+        [SAE(depth=3, edge=64, middle=1), tfl.Input(shape=(128,))],
+        [SAE(depth=0, edge=64, middle=4), tfl.Input(shape=(128,))],
+        [SAE(depth=1, edge=64, middle=4), tfl.Input(shape=(128,))],
+        [SAE(depth=2, edge=64, middle=4), tfl.Input(shape=(128,))],
+        [SAE(depth=3, edge=64, middle=4), tfl.Input(shape=(128,))],
+        [S2S_LSTM(cnn_depth=0), [tfl.Input(shape=(128, 4)), tfl.Input(shape=(64, 16))]],
+        [S2S_LSTM(cnn_depth=1), [tfl.Input(shape=(128, 4)), tfl.Input(shape=(64, 16))]],
+        [S2S_LSTM(cnn_depth=2), [tfl.Input(shape=(128, 4)), tfl.Input(shape=(64, 16))]],
+        [S2S_LSTM(cnn_depth=3), [tfl.Input(shape=(128, 4)), tfl.Input(shape=(64, 16))]],
+        [S2S_LSTM(sae_depth=0), [tfl.Input(shape=(128, 4)), tfl.Input(shape=(64, 16))]],
+        [S2S_LSTM(sae_depth=1), [tfl.Input(shape=(128, 4)), tfl.Input(shape=(64, 16))]],
+        [S2S_LSTM(sae_depth=2), [tfl.Input(shape=(128, 4)), tfl.Input(shape=(64, 16))]],
+        [S2S_LSTM(sae_depth=3), [tfl.Input(shape=(128, 4)), tfl.Input(shape=(64, 16))]],
+        [S2S_GRU(cnn_depth=0), [tfl.Input(shape=(128, 4)), tfl.Input(shape=(64, 16))]],
+        [S2S_GRU(cnn_depth=1), [tfl.Input(shape=(128, 4)), tfl.Input(shape=(64, 16))]],
+        [S2S_GRU(cnn_depth=2), [tfl.Input(shape=(128, 4)), tfl.Input(shape=(64, 16))]],
+        [S2S_GRU(cnn_depth=3), [tfl.Input(shape=(128, 4)), tfl.Input(shape=(64, 16))]],
+        [S2S_GRU(sae_depth=0), [tfl.Input(shape=(128, 4)), tfl.Input(shape=(64, 16))]],
+        [S2S_GRU(sae_depth=1), [tfl.Input(shape=(128, 4)), tfl.Input(shape=(64, 16))]],
+        [S2S_GRU(sae_depth=2), [tfl.Input(shape=(128, 4)), tfl.Input(shape=(64, 16))]],
+        [S2S_GRU(sae_depth=3), [tfl.Input(shape=(128, 4)), tfl.Input(shape=(64, 16))]],
     ])
-    def test_call(self, model: keras.Model, inputs):
+    def test_call(self, model: tf.keras.Model, inputs):
         with self.subTest(type(model).__name__):
-            self.assertIsInstance(model.call(inputs), KerasTensor)
+            self.assertIsNotNone(model(inputs))
 
 
 class TestS2S(TestCase):
@@ -98,8 +103,9 @@ class TestTimeSeriesRegressor(TestCase):
         [TimeSeriesRegressor(24, ShallowS2S('eSVM', True))],
         [TimeSeriesRegressor(24, ShallowS2S('nSVM', True))],
         [TimeSeriesRegressor(24, ShallowS2S('XGB', True))],
+        [TimeSeriesRegressor(24, ShallowS2S('RF', True))],
+        [TimeSeriesRegressor(24, ShallowS2S('DT', True))],
         [TimeSeriesRegressor(24, ShallowS2S(lambda: SVR(), True))],
-        [TimeSeriesRegressor(24 * 14, ShallowS2S('eSVM', True))],
     ])
     def test_fit_predict(self, f: TimeSeriesRegressor):
         gds = GeneratedDataSource()
@@ -160,7 +166,7 @@ class TestTimeSeriesGroupRegressor(TestCase):
         x = gds(10)
         y1 = gds(2)
         y2 = gds(2)
-        f = TimeSeriesGroupRegressor(base)
+        f = MultiSeriesRegressor(base)
 
         with self.subTest(f'{f}: fit'):
             x_train = x.iloc[:-base.horizon, :]

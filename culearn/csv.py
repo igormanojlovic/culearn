@@ -71,6 +71,7 @@ class TimeSeriesCSV(PandasTimeSeries, StreamingTimeSeries):
             for df in df_csv.read():
                 ts_time = df[self.ts_time] if self.ts_time is str else df.iloc[:, self.ts_time]
                 ts_value = df[self.ts_value] if self.ts_value is str else df.iloc[:, self.ts_value]
+                ts_value = pd.to_numeric(ts_value, errors='coerce')
                 ts = pd.concat((ts, pd.concat([ts_time, ts_value], axis=1)), axis=0)
 
         ts.columns = ['timestamp', 'value']
@@ -158,6 +159,7 @@ class ConcatSeriesCSV(StrMixin):
                 ts_id = df.apply(lambda _: self.ts_id(df_csv.path, _), axis=1)
                 ts_time = df[self.ts_time] if self.ts_time is str else df.iloc[:, self.ts_time]
                 ts_value = df[self.ts_value] if self.ts_value is str else df.iloc[:, self.ts_value]
+                ts_value = pd.to_numeric(ts_value, errors='coerce')
                 ts = pd.concat([ts_id, ts_time, ts_value], axis=1)
                 ts.columns = ['ID', 'timestamp', 'value']
                 ts = ts.pivot_table(columns='ID', index='timestamp', values='value')
