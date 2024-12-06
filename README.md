@@ -6,13 +6,13 @@
 [![cover](https://coveralls.io/repos/github/igormanojlovic/culearn/badge.svg)](https://coveralls.io/github/igormanojlovic/culearn)
 [![linkedin](https://img.shields.io/badge/LinkedIn-informational?style=flat&logo=linkedin&logoColor=white&color=0D76A8)](https://www.linkedin.com/in/igormanojlovic/)
 
-Cumulant Learning is a pattern recognition method designed to support probabilistic time series forecasting with high and stable forecast accuracy and short execution time when dealing with high-resolution time series coming from numerous data sources. The research paper describing the proposed solution is currently in the writing/publishing process. However, if you are using this software before the paper is published, please cite one of the references [^1][^2][^3]. 
+Cumulant Learning is a pattern recognition method designed to support probabilistic time series forecasting with high and stable forecast accuracy and short execution time when dealing with high-resolution time series coming from numerous data sources. This method has been publised in IEEE Transactions on Smart Grid, so if you are using this software for writing your own paper please cite the reference [^1] (preferably) or one of the references [^2][^3][^4][^5] (if you are using a specific subpart of the solution published in one of those papers).
 
 ## How does it work?
 
 Cumulant Learning is designed to recognize time series patterns as follows:
 
-1. Input time series are approximated and clustered to obtain the time series of normalized cluster-level cumulants, utilizing modified versions of existing representation methods[^1][^2][^3].
+1. Input time series are approximated and clustered to obtain the time series of normalized cluster-level cumulants.
 2. A set of regressors is used to capture local trends and time dependencies in the obtained cumulants based on lagged cumulant values, encoded time (calendar) features, and other exogenous features (such as weather in load forecasting).
 3. Trained regressors are used to predict the future cluster-level cumulants. Then, these cumulants are transformed into time series of normalized cluster-level quantiles based on Cornish–Fisher expansion. Finally, these quantiles are denormalized and combined into prediction intervals for individual time series.
 
@@ -76,7 +76,7 @@ pred_intervals = learner.predict(fit_interval.end, p=[0.75, 0.95, 0.99], cluster
 
 ### Step 1: Prepare the dataset
 
-The first step is to create an instance of a data source wrapper and to retrieve a dataset for Cumulant Learning. You can implement a custom data source or use one of the existing implementations: LCL[^4], REFIT[^5], SGSC[^6], and UMass[^7]. The existing implementations will download smart meter and weather data for load forecasting from external data sources, unzip the data files, split the larger CSV files into smaller ones to support parallel processing, etc. This might take a while the first time, but makes the rest of the process much faster.
+The first step is to create an instance of a data source wrapper and to retrieve a dataset for Cumulant Learning. You can implement a custom data source or use one of the existing implementations: LCL[^6], REFIT[^7], SGSC[^8], and UMass[^9]. The existing implementations will download smart meter and weather data for load forecasting from external data sources, unzip the data files, split the larger CSV files into smaller ones to support parallel processing, etc. This might take a while the first time, but makes the rest of the process much faster.
 
 ### Step 2: Prepare the transformer
 
@@ -108,16 +108,20 @@ Different parts of the [culearn](https://github.com/igormanojlovic/culearn) pack
 
 ## References
 
-[^1]: Igor Manojlović, Goran Švenda, Aleksandar Erdeljan, Milan Gavrić, Darko Čapko: *Hierarchical multiresolution representation of streaming time series*, Big Data Research 26: 100256 (2021), DOI: [10.1016/j.bdr.2021.100256](https://doi.org/10.1016/j.bdr.2021.100256)
+[^1]: Igor Manojlović, Goran Švenda, Aleksandar Erdeljan, Milan Gavrić, Darko Čapko, *Cumulant Learning: Highly Accurate and Computationally Efficient Load Pattern Recognition Method for Probabilistic STLF at the LV Level*, IEEE Transactions on Smart Grid, 2024, DOI: [10.1109/TSG.2024.3481894](https://doi.org/10.1109/TSG.2024.3481894)
 
-[^2]: Igor Manojlović, Goran Švenda, Aleksandar Erdeljan, Milan Gavrić: *Time series grouping algorithm for load pattern recognition*, Computers in Industry 111: 140-147 (2019), DOI: [10.1016/j.compind.2019.07.009](https://doi.org/10.1016/j.compind.2019.07.009)
+[^2]: Igor Manojlović, *Kratkoročna probabilistička prognoza opterećenja na niskom naponu u elektrodistributivnim mrežama* | *Probabilistic short-term load forecasting at low voltage in distribution networks*, PhD Thesis, Faculty of Technical Sciences, University of Novi Sad, 2023, [link](https://nardus.mpn.gov.rs/handle/123456789/21279)
 
-[^3]: Igor Manojlović, Goran Švenda, Aleksandar Erdeljan: *Load pattern recognition method for probabilistic short-term load forecasting at low voltage level*, 2022 IEEE PES Innovative Smart Grid Technologies Conference Europe (ISGT-Europe): 1-5 (2022), DOI: [10.1109/ISGT-Europe54678.2022.9960310](https://doi.org/10.1109/ISGT-Europe54678.2022.9960310) 
+[^3]: Igor Manojlović, Goran Švenda, Aleksandar Erdeljan, *Load Pattern Recognition Method for Probabilistic Short-Term Load Forecasting at Low Voltage Level*, 2022 IEEE PES Innovative Smart Grid Technologies Conference Europe (ISGT-Europe), Novi Sad, Serbia, 2022, DOI: [10.1109/ISGT-Europe54678.2022.9960310](https://doi.org/10.1109/ISGT-Europe54678.2022.9960310)
 
-[^4]: LCL dataset, https://data.london.gov.uk/dataset/smartmeter-energy-use-data-in-london-households
+[^4]: Igor Manojlović, Goran Švenda, Aleksandar Erdeljan, Milan Gavrić, Darko Čapko, *Hierarchical Multiresolution Representation of Streaming Time Series*, Big Data Research 26: 100256, 2021, DOI: [10.1016/j.bdr.2021.100256](https://doi.org/10.1016/j.bdr.2021.100256)
 
-[^5]: REFIT dataset, https://pureportal.strath.ac.uk/en/datasets/refit-electrical-load-measurements-cleaned
+[^5]: Igor Manojlović, Goran Švenda, Aleksandar Erdeljan, Milan Gavrić, *Time Series Grouping Algorithm for Load Pattern Recognition*, Computers in Industry 111: 140-147, 2019, DOI: [10.1016/j.compind.2019.07.009](https://doi.org/10.1016/j.compind.2019.07.009)
 
-[^6]: SGSC dataset, https://data.gov.au/data/dataset/smart-grid-smart-city-customer-trial-data
+[^6]: LCL dataset, https://data.london.gov.uk/dataset/smartmeter-energy-use-data-in-london-households
 
-[^7]: UMass dataset, https://traces.cs.umass.edu/index.php/Smart/Smart
+[^7]: REFIT dataset, https://pureportal.strath.ac.uk/en/datasets/refit-electrical-load-measurements-cleaned
+
+[^8]: SGSC dataset, https://data.gov.au/data/dataset/smart-grid-smart-city-customer-trial-data
+
+[^9]: UMass dataset, https://traces.cs.umass.edu/index.php/Smart/Smart
